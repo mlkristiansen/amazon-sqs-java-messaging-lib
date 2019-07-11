@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -369,6 +369,12 @@ public class SQSMessageConsumerPrefetch implements Runnable, PrefetchManager {
             jmsMessage.setJMSReplyTo(replyToQueue);
         }
         
+        MessageAttributeValue correlationIdAttribute = message.getMessageAttributes().get(
+                SQSMessage.JMS_SQS_CORRELATION_ID);
+        if (correlationIdAttribute != null) {
+                jmsMessage.setJMSCorrelationID(correlationIdAttribute.getStringValue());
+        }
+        
         return jmsMessage;
     }
 
@@ -469,13 +475,13 @@ public class SQSMessageConsumerPrefetch implements Runnable, PrefetchManager {
         
         MessageManager messageManager = null;
         synchronized (stateLock) {
-            // If message exists in queue poll.
-            if (!messageQueue.isEmpty()) {
-                messageManager = messageQueue.pollFirst();
-            } else {
-                requestMessage();
-            	try {
-                    long startTime = System.currentTimeMillis();
+            requestMessage();
+            try {
+                // If message exists in queue poll.
+                if (!messageQueue.isEmpty()) {
+                    messageManager = messageQueue.pollFirst();
+                } else {
+            	    long startTime = System.currentTimeMillis();
     
                     long waitTime = 0;
                     while (messageQueue.isEmpty() && !isClosed() &&
@@ -491,12 +497,12 @@ public class SQSMessageConsumerPrefetch implements Runnable, PrefetchManager {
                         return null;
                     }
                     messageManager = messageQueue.pollFirst();
-            	} finally {
-            	    if (messageManager == null) {
-            	        unrequestMessage();
-            	    }
-            	}
-            }
+                }
+        	} finally {
+        	    if (messageManager == null) {
+        	        unrequestMessage();
+        	    }
+        	}
         }
         return messageHandler(messageManager);
     }
@@ -519,6 +525,9 @@ public class SQSMessageConsumerPrefetch implements Runnable, PrefetchManager {
         MessageManager messageManager;
         synchronized (stateLock) {
             messageManager = messageQueue.pollFirst();
+        }
+        if (messageManager != null) {
+            requestMessage();
         }
         return messageHandler(messageManager);
     }

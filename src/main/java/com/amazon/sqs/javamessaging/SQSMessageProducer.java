@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.amazon.sqs.javamessaging;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.jms.Destination;
@@ -54,6 +55,10 @@ import com.amazonaws.util.Base64;
  */
 public class SQSMessageProducer implements MessageProducer, QueueSender {
     private static final Log LOG = LogFactory.getLog(SQSMessageProducer.class);
+
+    private long MAXIMUM_DELIVERY_DELAY_MILLISECONDS = TimeUnit.MILLISECONDS.convert(15, TimeUnit.MINUTES);
+    
+    private int deliveryDelaySeconds = 0;
 
     /** This field is not actually used. */
     private long timeToLive;
@@ -117,9 +122,14 @@ public class SQSMessageProducer implements MessageProducer, QueueSender {
          */
         addStringAttribute(messageAttributes, SQSMessage.JMS_SQS_MESSAGE_TYPE, messageType);
         addReplyToQueueReservedAttributes(messageAttributes, message);
+        addCorrelationIDToQueueReservedAttributes(messageAttributes, message);
 
         SendMessageRequest sendMessageRequest = new SendMessageRequest(queue.getQueueUrl(), sqsMessageBody);
         sendMessageRequest.setMessageAttributes(messageAttributes);
+
+        if (deliveryDelaySeconds != 0) {
+            sendMessageRequest.setDelaySeconds(deliveryDelaySeconds);
+        }
 
         //for FIFO queues, we have to specify both MessageGroupId, which we obtain from standard property JMSX_GROUP_ID
         //and MessageDeduplicationId, which we obtain from a custom provider specific property JMS_SQS_DEDUPLICATION_ID
@@ -248,6 +258,19 @@ public class SQSMessageProducer implements MessageProducer, QueueSender {
              */
             addStringAttribute(messageAttributes, SQSMessage.JMS_SQS_REPLY_TO_QUEUE_NAME, replyToQueue.getQueueName());
             addStringAttribute(messageAttributes, SQSMessage.JMS_SQS_REPLY_TO_QUEUE_URL, replyToQueue.getQueueUrl());
+        }
+    }
+
+    /**
+     * Adds the correlation ID attribute during send as part of the send message
+     * request, if necessary
+     */
+    private void addCorrelationIDToQueueReservedAttributes(Map<String, MessageAttributeValue> messageAttributes,
+                                                   SQSMessage message) throws JMSException {
+
+        String correlationID = message.getJMSCorrelationID();
+        if (correlationID != null) {
+            addStringAttribute(messageAttributes, SQSMessage.JMS_SQS_CORRELATION_ID, correlationID);
         }
     }
 
@@ -479,7 +502,32 @@ public class SQSMessageProducer implements MessageProducer, QueueSender {
     public long getTimeToLive() throws JMSException {
         return timeToLive;
     }
+    
+    /**
+     * Sets the minimum length of time in milliseconds that must elapse after a 
+     * message is sent before the JMS provider may deliver the message to a consumer.
+     * <p>
+     * This must be a multiple of 1000, since SQS only supports delivery delays
+     * in seconds.
+     */
+    public void setDeliveryDelay(long deliveryDelay) {
+        if (deliveryDelay < 0 || deliveryDelay > MAXIMUM_DELIVERY_DELAY_MILLISECONDS) {
+            throw new IllegalArgumentException("Delivery delay must be non-negative and at most 15 minutes: " + deliveryDelay);
+        }
+        if (deliveryDelay % 1000 != 0) {
+            throw new IllegalArgumentException("Delivery delay must be a multiple of 1000: " + deliveryDelay);
+        }
+        this.deliveryDelaySeconds = (int)(deliveryDelay / 1000);
+    }
 
+    /**
+     * Gets the minimum length of time in milliseconds that must elapse after a 
+     * message is sent before the JMS provider may deliver the message to a consumer.
+     */
+    public long getDeliveryDelay() {
+        return deliveryDelaySeconds * 1000;
+    }
+    
     void checkClosed() throws IllegalStateException {
         if (closed.get()) {
             throw new IllegalStateException("The producer is closed.");

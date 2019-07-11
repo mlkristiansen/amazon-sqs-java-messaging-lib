@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -69,6 +69,7 @@ public class SQSMessage implements Message {
     public static final String JMS_SQS_MESSAGE_TYPE = "JMS_SQSMessageType";
     public static final String JMS_SQS_REPLY_TO_QUEUE_NAME = "JMS_SQSReplyToQueueName";
     public static final String JMS_SQS_REPLY_TO_QUEUE_URL = "JMS_SQSReplyToQueueURL";
+    public static final String JMS_SQS_CORRELATION_ID = "JMS_SQSCorrelationID";
     
     // Default JMS Message properties
     private int deliveryMode = Message.DEFAULT_DELIVERY_MODE;
@@ -1191,7 +1192,7 @@ public class SQSMessage implements Message {
         }
 
         private static Object getObjectValue(String value, String type) throws JMSException {
-            if (STRING.equals(type)) {
+            if (STRING.equals(type) || NUMBER.equals(type)) {
                 return value;
             } else if (INT.equals(type)) {
                 return Integer.valueOf(value);
